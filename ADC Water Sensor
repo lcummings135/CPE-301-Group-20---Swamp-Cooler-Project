@@ -11,47 +11,41 @@ int HistoryValue = 0;
 char printBuffer[128];
 
 //use ADC0 as our input pin, corresponds to pin 97, PortF, pin 0
+//create array for channel number, because we cant the channel number to be entered
 
 void setup() 
 {
-  //sets all analog pins on port F to inputs
   *my_DDRF &= 0x00;
-
   // setup the UART
   Serial.begin(9600);
-  
   // setup the ADC
   adc_init();
-  
 }
 
 void loop() 
 {
   // get the reading from the ADC
-  unsigned int value = adc_read(0); //assuming input ADC0 pin
-  
-  //print the values from the ADC
-  Serial.println(value);
-     
+  unsigned int value = adc_read(0);
 
+  if(((HistoryValue>=value) && ((HistoryValue - value) > 10)) || ((HistoryValue<value) && ((value - HistoryValue) > 10)))
+    {
+      sprintf(printBuffer,"ADC%d level is %d\n",adc_id, value);
+      Serial.print(printBuffer);
+      HistoryValue = value;
+    }
 
 }
 
 void adc_init()
 {
-  // setup the A register
+   // setup the A register
   *my_ADCSRA |= 0x85;
   *my_ADCSRA &= 0x87;
-  
   // setup the B register
   *my_ADCSRB &= (0x01 << 6);
-  
   // setup the MUX Register
-  
-  *my_ADMUX |= (0x01 << 7); //sets MSB bit to 1, REFS1
-  
+  //*my_ADMUX |= (0x01 << 7); //sets MSB bit to 1, REFS1
   *my_ADMUX &= 0x9C; //sets REFS0 and ADLAR for right justification
-  
   //disabling digital input for all pins
   *my_DIDR0 |= 0x81; //disables all digital input pins for buffer
 }
@@ -61,14 +55,12 @@ unsigned int adc_read(unsigned char adc_channel_num)
   // clear the channel selection bits (MUX 4:0)
   *my_ADMUX &= 0xE0;
 
-  // clear the channel selection bits (MUX 5); MUX 5 is in the ADCSRB register
+  // clear the channel selection bits (MUX 5) //MUX 5 is in the ADCSRB register
   *my_ADCSRB &= 0x77;
   
-  // set the channel number
-  //unsigned int channel_nmbr = channels[adc_channel_num];
-  
+
   // set the channel selection bits
-  *my_ADMUX &= 0xE0;
+  *my_ADMUX = *my_ADMUX | 0b01000000;
   
   // set bit 6 of ADCSRA to 1 to start a conversion
   *my_ADCSRA |= 0x40;
