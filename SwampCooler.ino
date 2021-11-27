@@ -33,7 +33,8 @@ volatile unsigned char* ddr_b = (unsigned char*) 0x24;
 volatile unsigned char* port_b = (unsigned char*) 0x25;
 
 // PORT K:
-// arduino analog pin A8, bit#0: toggle button input
+// arduino analog pin A#8, bit#0: toggle button input
+// arduino analog pin A#9, bit#1: output fan
 volatile unsigned char* pin_k = (unsigned char*) 0x106;
 volatile unsigned char* ddr_k = (unsigned char*) 0x107;
 volatile unsigned char* port_k = (unsigned char*) 0x108;
@@ -47,6 +48,7 @@ volatile unsigned char* my_DIDR0 = (unsigned char*) 0x7E;
 volatile unsigned char* my_DDRF = (unsigned char*) 0x30;
 
 // timer registers (for button debouncing)
+// button on analog in #8
 volatile unsigned char *myTCCR1A  = (unsigned char*) 0x80;
 volatile unsigned char *myTCCR1B  = (unsigned char*) 0x81;
 volatile unsigned char *myTCCR1C  = (unsigned char*) 0x82;
@@ -58,7 +60,7 @@ unsigned int buttonTicks = 4000; // about 250ms with prescaler at 1024
 unsigned int timer_running = 0;
 
 //Settings
-float tempSet = 28; // temp threshold
+float tempSet = 24; // temp threshold
 float minLevel = 0; // minimum water level
 int angleSet = 0;
 
@@ -74,8 +76,8 @@ void setup() {
   // Pb2-7 outputs
   *ddr_b |= 0b11111100;
 
-  // Pk toggle button input
-  *ddr_k |= 0b00000000;
+  // Pk toggle button input, bit #1 output
+  *ddr_k |= 0b00000010;
 
   // initialize adc for sensors
   adc_init();
@@ -89,7 +91,6 @@ void setup() {
   timer_running = 1;
 }
 void loop() {
-  //Serial.println(*pin_k);
   //Setup Led indication.
   LEDS();
   Vent();
@@ -179,16 +180,17 @@ void WaterLevel(){
 }
 
 void Motor(){
-  if(lastState != state){
-    if(state == 3){
-      // turn motor off
-      
-    }
-    else{
-      // turn motor on
-      
-    }
+  //if(lastState != state){
+    //Serial.println(state);
+  if(state == 3 || state == 0){
+    // turn motor off
+    *port_k &= 0b11111101;
   }
+  else{
+    // turn motor on
+    *port_k |= 0b00000010;
+  }
+//}
 }
 
 void Display(){
@@ -268,8 +270,9 @@ void Button() // for push button, toggle
   
   
   // if button is pressed
-  if(*pin_k > 0)
+  if(*pin_k & 0b00000001 == 1)
   { 
+    Serial.println(*pin_k);
     wasPressed = true;
     // reset timer so it doesnt bounce back and forth
     currentTicks = buttonTicks;
