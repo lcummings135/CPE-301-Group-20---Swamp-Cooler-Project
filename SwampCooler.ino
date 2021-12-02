@@ -1,5 +1,11 @@
 #include <LiquidCrystal.h>
 #include <dht.h>
+#include <Servo.h>
+#include <Wire.h>
+#include "RTClib.h"
+Servo myservo;
+
+RTC_DS1307 RTC;
 
 // temp/humidity input on digital pin #9
 #define DHT_PIN 9
@@ -39,6 +45,11 @@ volatile unsigned char* pin_k = (unsigned char*) 0x106;
 volatile unsigned char* ddr_k = (unsigned char*) 0x107;
 volatile unsigned char* port_k = (unsigned char*) 0x108;
 
+//PORT H:
+//arduino digital pin 7, bit #4, green LED
+volatile unsigned char* port_h = (unsigned char*) 0x102;
+volatile unsigned char* ddr_h = (unsigned char*) 0x101;
+
 // water level sensor input on analog in #0
 volatile unsigned char* my_ADMUX = (unsigned char*) 0x7C;
 volatile unsigned char* my_ADCSRB = (unsigned char*) 0x7B;
@@ -61,8 +72,10 @@ unsigned int timer_running = 0;
 
 //Settings
 float tempSet = 24; // temp threshold
-float minLevel = 0; // minimum water level
+float minLevel = 150; // minimum water level
 int angleSet = 0;
+int potpin = 0;
+int val;
 
 // Variables in system
 float temp = 0, humidity = 0;
@@ -71,13 +84,26 @@ bool enabled = false, clockTick = false;
 dht DHT;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(56600);
+  Wire.begin();
+  RTC.begin();
+
+  if (! RTC.isrunning()) {
+    Serial.println("RTC is NOT running!");
+    // following line sets the RTC to the date & time this sketch was compiled
+    RTC.adjust(DateTime(__DATE__, __TIME__));
+  }
+  
+  myservo.attach(10);
   
   // Pb2-7 outputs
   *ddr_b |= 0b11111100;
 
   // Pk toggle button input, bit #1 output
   *ddr_k |= 0b00000010;
+
+  //sets PH4 as an output for the green LED
+  *ddr_h |= (0x01 << 4); 
 
   // initialize adc for sensors
   adc_init();
@@ -91,6 +117,9 @@ void setup() {
   timer_running = 1;
 }
 void loop() {
+
+  int val_adc = adc_read(0);
+  Serial.println(val_adc);
   //Setup Led indication.
   LEDS();
   Vent();
@@ -200,6 +229,7 @@ void Display(){
     lcd.setCursor(0,0);
     lcd.print("Error. Water  too low.");
     lcd.print(waterLevel);
+    
   }
   else if(state >= 1){
     
@@ -225,7 +255,7 @@ void LEDS(){
     //Serial.println(state);
     if(state == 1){
       // Light the Green LED.
-      *port_b |= 0b00010000;
+      *port_h |= (0x01 << 4);
     }
     else if(state == 2){
       // Light the Blue LED.
@@ -245,10 +275,16 @@ void LEDS(){
 void Vent(){
   //check for change in address to see if angle has changed vAngle and angleSet might need to be hex values.
   // Set vent angle
-  if(vAngle != angleSet){
+ /* if(vAngle != angleSet){
     //Change vent angle somehow.
   }
-  angleSet = vAngle;
+  angleSet = vAngle;*/
+  myservo.attach(10);
+
+  unsigned int angle = adc_read(1);
+  //Serial.println(value);
+  int position = map(angle, 0, 1023, 0, 180);
+  myservo.write(position);// move servos to center position -> 90°
 }
 
 bool wasPressed = false;
@@ -288,7 +324,19 @@ void Button() // for push button, toggle
 
 void Save(){
   if(lastState != state)
+  {
     lcd.clear();
+    if((lastState == 3 || lastState == 0) && (state == 1 || state == 2))
+    {
+      Serial.print("Motor on at: ");
+      writeTime();
+    }
+    else if ((lastState == 1 || lastState == 2) && (state == 0 || state == 3))
+    {
+      Serial.print("Motor off at: ");
+      writeTime();
+    }
+  }
   // Save information on the state change with file writing.
   lastState = state;
 }
@@ -316,9 +364,15 @@ unsigned int adc_read(unsigned char adc_channel_num)
   // clear the channel selection bits (MUX 5) //MUX 5 is in the ADCSRB register
   *my_ADCSRB &= 0x77;
   
-
+ if (adc_channel_num == 0)
+  {
   // set the channel selection bits
   *my_ADMUX = *my_ADMUX | 0b01000000;
+  }
+  else if (adc_channel_num == 1)
+  {
+    *my_ADMUX = *my_ADMUX | 0b01000001;
+  }
   
   // set bit 6 of ADCSRA to 1 to start a conversion
   *my_ADCSRA |= 0x40;
@@ -362,4 +416,22 @@ ISR(TIMER1_OVF_vect)
     // XOR to toggle PB6
     clockTick = true;
   }
+}
+
+void writeTime()
+{
+  DateTime now = RTC.now();
+    
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(' ');
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
 }
