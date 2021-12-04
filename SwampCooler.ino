@@ -1,11 +1,14 @@
 #include <LiquidCrystal.h>
 #include <dht.h>
 #include <Servo.h>
-#include <Wire.h>
 #include "RTClib.h"
 Servo myservo;
 
 RTC_DS1307 RTC;
+
+//motor
+//digital pin 8 is direction (go high to turn on)
+//digital pin 13 is enable (go high to enable)
 
 // temp/humidity input on digital pin #9
 #define DHT_PIN 9
@@ -71,7 +74,7 @@ unsigned int buttonTicks = 4000; // about 250ms with prescaler at 1024
 unsigned int timer_running = 0;
 
 //Settings
-float tempSet = 24; // temp threshold
+float tempSet = 26; // temp threshold
 float minLevel = 150; // minimum water level
 int angleSet = 0;
 int potpin = 0;
@@ -84,7 +87,7 @@ bool enabled = false, clockTick = false;
 dht DHT;
 
 void setup() {
-  Serial.begin(56600);
+  Serial.begin(9600);
   Wire.begin();
   RTC.begin();
 
@@ -115,14 +118,20 @@ void setup() {
   currentTicks = buttonTicks;
   *myTCCR1B |= 0x05;
   timer_running = 1;
+
+  *port_k |= 0b00000010;
+
+  *ddr_h |= (0x01 << 5); 
+  *ddr_b |= (0x01 << 7);
+
+  RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 void loop() {
+  
 
-  int val_adc = adc_read(0);
-  Serial.println(val_adc);
   //Setup Led indication.
   LEDS();
-  Vent();
+  //Vent();
 
   //Check for state change and save info if changed.
   if(lastState != state){
@@ -135,6 +144,7 @@ void loop() {
     Temp();
     Display();
     WaterLevel();
+    Vent();
   }
   
   //Running State
@@ -213,11 +223,18 @@ void Motor(){
     //Serial.println(state);
   if(state == 3 || state == 0){
     // turn motor off
-    *port_k &= 0b11111101;
+    //*port_k &= 0b11111101;
+   *port_b &= 0b01111111;
+   *port_h &= 0b11011111;
+
   }
   else{
     // turn motor on
-    *port_k |= 0b00000010;
+    //*port_b |= (0x01 << 7);
+    //*port_k |= 0b00000010;
+    
+    *port_b |= (0x01 << 7);
+    *port_h |= (0x01 << 5);
   }
 //}
 }
@@ -227,7 +244,10 @@ void Display(){
   if(state == 3){
     // Print Error msg and water level to screen.
     lcd.setCursor(0,0);
-    lcd.print("Error. Water  too low.");
+    lcd.print("Error:");
+    lcd.setCursor(0,1);
+    lcd.print("Water too low.");
+    
     lcd.print(waterLevel);
     
   }
@@ -252,6 +272,7 @@ void Display(){
 void LEDS(){
   if(lastState != state){
     *port_b &= 0b10000111;
+    *port_h &= 0x00;
     //Serial.println(state);
     if(state == 1){
       // Light the Green LED.
@@ -308,7 +329,7 @@ void Button() // for push button, toggle
   // if button is pressed
   if(*pin_k & 0b00000001 == 1)
   { 
-    Serial.println(*pin_k);
+  
     wasPressed = true;
     // reset timer so it doesnt bounce back and forth
     currentTicks = buttonTicks;
@@ -326,12 +347,12 @@ void Save(){
   if(lastState != state)
   {
     lcd.clear();
-    if((lastState == 3 || lastState == 0) && (state == 1 || state == 2))
+  if(state == 2)
     {
       Serial.print("Motor on at: ");
       writeTime();
     }
-    else if ((lastState == 1 || lastState == 2) && (state == 0 || state == 3))
+    else if (lastState == 2)
     {
       Serial.print("Motor off at: ");
       writeTime();
@@ -339,6 +360,7 @@ void Save(){
   }
   // Save information on the state change with file writing.
   lastState = state;
+  
 }
 
 
